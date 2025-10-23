@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Host Player</title>
+</head>
+
+<body>
+  <h2>Host Player (Auto-Recover)</h2>
+  <p id="status">Yükleniyor...</p>
+
+  <button id="playBtn">🎵 Play Mix Playlist</button>
+  <button id="seekBtn">⏩ Son 5 Saniyeye Git</button>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io()
+    const token = prompt("Access Token'ı terminalden kopyalayıp gir:")
+    const playBtn = document.getElementById("playBtn")
+    const seekBtn = document.getElementById("seekBtn")
+
+    let lastActive = Date.now()
+
+    playBtn.onclick = async () => fetch("/play", { method: "POST" })
+    seekBtn.onclick = async () => fetch("/seekToEnd", { method: "POST" })
+
+    window.onSpotifyWebPlaybackSDKReady = () => {
+      const player = new Spotify.Player({
+        name: "Radiotify Mix Player (AutoRecover)",
+        getOAuthToken: (cb) => cb(token),
+        volume: 1.0,
+      })
+
+      player.addListener("ready", ({ device_id }) => {
+        document.getElementById("status").innerText =
+          "Hazır ✅ Device ID: " + device_id
+        socket.emit("host-ready", { device_id })
+      })
+
+      player.addListener("player_state_changed", (state) => {
+        if (!state) return
+        const paused = state.paused
+        const pos = state.position
+        const diff = Date.now() - lastActive
+
+        // Heartbeat: 10sn'den uzun süre sessiz kaldıysa reset
+        if (paused && diff > 10000) {
+          console.warn("⚠️ Sessizlik algılandı, yeniden başlatılıyor...")
+          socket.emit("restart-playback")
+          lastActive = Date.now()
+        }
+
+        // Normalde ilerliyorsa, lastActive'i güncelle
+        if (!paused && pos > 0) {
+          lastActive = Date.now()
+        }
+      })
+
+      player.connect()
+    }
+
+    const s = document.createElement("script")
+    s.src = "https://sdk.scdn.co/spotify-player.js"
+    document.head.appendChild(s);
+  </script>
+</body>
+
+</html>

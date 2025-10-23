@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Listener</title>
+</head>
+
+<body>
+  <h2>Listener</h2>
+  <pre id="log">Bağlanıyor...</pre>
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io()
+    const log = document.getElementById("log")
+    socket.on("player-state", (st) => {
+      const tr = st.track_window?.current_track
+      if (!tr) return
+      log.textContent = `🎵 ${tr.name} — ${tr.artists
+        .map((a) => a.name)
+        .join(", ")}\n${Math.round(st.position / 1000)}s / ${Math.round(
+          st.duration / 1000
+        )}s`
+    });
+  </script>
+</body>
+
+</html>

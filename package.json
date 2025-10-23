@@ -1,0 +1,12 @@
+{
+  "name": "radiotify-test",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "server.js",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.19.0",
+    "node-fetch": "^3.3.2",
+    "socket.io": "^4.7.4"
+  }
+}
