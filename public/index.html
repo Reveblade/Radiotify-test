@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Queue Add Test</title>
+  <script src="/socket.io/socket.io.js"></script>
+</head>
+
+<body style="font-family:sans-serif;background:#0b0b0b;color:#eee;padding:20px">
+  <h1>Spotify Queue Add Test</h1>
+  <p>Her şarkı bittiğinde otomatik olarak yeni şarkı queue'ya eklenecek.</p>
+  <ul id="events"></ul>
+  <script>
+    const socket = io()
+    const list = document.getElementById("events")
+
+    socket.on("added_to_queue", (track) => {
+      const li = document.createElement("li")
+      li.textContent = `Yeni track başladı: ${track.name}`
+      list.prepend(li)
+    });
+  </script>
+</body>
+
+</html>
