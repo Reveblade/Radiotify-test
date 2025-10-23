@@ -3,66 +3,205 @@
 
 <head>
   <meta charset="UTF-8" />
-  <title>Host Player</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Radiotify — Host Panel</title>
+  <style>
+    :root {
+      --green: #1db954;
+      --green-dark: #18a34a;
+      --red: #d33;
+      --bg: #0a0a0a;
+      --panel: #161616;
+    }
+
+    body {
+      font-family: "Segoe UI", Arial, sans-serif;
+      background: var(--bg);
+      color: #eee;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 16px;
+    }
+
+    h1 {
+      color: var(--green);
+      margin: 8px 0 4px;
+    }
+
+    .subtitle {
+      color: #aaa;
+      font-size: 14px;
+      margin-bottom: 12px;
+      text-align: center;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid #222;
+      border-radius: 12px;
+      padding: 20px 24px;
+      width: 420px;
+      box-shadow: 0 0 25px rgba(0, 0, 0, .4);
+    }
+
+    select,
+    button {
+      width: 100%;
+      border-radius: 8px;
+      padding: 11px 12px;
+    }
+
+    select {
+      background: #202020;
+      border: 1px solid #333;
+      color: #ddd;
+    }
+
+    button {
+      border: none;
+      color: #fff;
+      cursor: pointer;
+      font-size: 15px;
+    }
+
+    button.primary {
+      background: var(--green);
+      margin-top: 8px;
+    }
+
+    button.primary:hover {
+      background: var(--green-dark);
+    }
+
+    button.secondary {
+      background: #2a2a2a;
+      color: #ddd;
+      border: 1px solid #333;
+      margin-top: 8px;
+    }
+
+    .status {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-top: 12px;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #555;
+    }
+
+    .dot.active {
+      background: var(--green);
+      box-shadow: 0 0 8px var(--green);
+    }
+
+    .log {
+      font-family: ui-monospace, Menlo, Consolas, monospace;
+      background: #0e0e0e;
+      border: 1px solid #222;
+      border-radius: 8px;
+      height: 150px;
+      overflow: auto;
+      padding: 10px;
+      color: #bbb;
+      margin-top: 12px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .tiny {
+      color: #aaa;
+      font-size: 12px;
+      margin-top: 8px;
+    }
+  </style>
 </head>
 
 <body>
-  <h2>Host Player (Auto-Recover)</h2>
-  <p id="status">Yükleniyor...</p>
+  <h1>🎧 Radiotify — Host Panel</h1>
+  <div class="subtitle">Spotify uygulamasında bir parça oynatın → cihazı seçip <b>Bağlan</b> → durum yayınlanır.</div>
 
-  <button id="playBtn">🎵 Play Mix Playlist</button>
-  <button id="seekBtn">⏩ Son 5 Saniyeye Git</button>
+  <div class="panel">
+    <select id="deviceSelect">
+      <option value="">Cihazlar yükleniyor…</option>
+    </select>
+    <button class="primary" onclick="connectSelectedDevice()">Bağlan</button>
 
-  <script src="/socket.io/socket.io.js"></script>
+    <div class="row">
+      <button class="secondary" onclick="previous()">⏮️ Önceki</button>
+      <button class="secondary" onclick="next()">⏭️ Sonraki</button>
+      <button class="secondary" onclick="seekBackward()">⏪ -30s</button>
+      <button class="secondary" onclick="seekForward()">⏩ +30s</button>
+      <button class="secondary" onclick="pause()">⏸️ Duraklat</button>
+      <button class="secondary" onclick="resume()">▶️ Devam</button>
+    </div>
+
+    <div class="status">
+      <div id="dot" class="dot"></div>
+      <div id="stateText">Durum: bilinmiyor</div>
+    </div>
+    <div id="trackText" class="tiny">Parça bekleniyor…</div>
+
+    <div id="log" class="log"></div>
+  </div>
+
   <script>
-    const socket = io()
-    const token = prompt("Access Token'ı terminalden kopyalayıp gir:")
-    const playBtn = document.getElementById("playBtn")
-    const seekBtn = document.getElementById("seekBtn")
+    const logBox = document.getElementById("log")
+    const deviceSelect = document.getElementById("deviceSelect")
+    const dot = document.getElementById("dot")
+    const stateText = document.getElementById("stateText")
+    const trackText = document.getElementById("trackText")
 
-    let lastActive = Date.now()
+    const log = (m) => { const t = new Date().toLocaleTimeString(); logBox.innerHTML = `[${t}] ${m}<br>` + logBox.innerHTML }
 
-    playBtn.onclick = async () => fetch("/play", { method: "POST" })
-    seekBtn.onclick = async () => fetch("/seekToEnd", { method: "POST" })
-
-    window.onSpotifyWebPlaybackSDKReady = () => {
-      const player = new Spotify.Player({
-        name: "Radiotify Mix Player (AutoRecover)",
-        getOAuthToken: (cb) => cb(token),
-        volume: 1.0,
-      })
-
-      player.addListener("ready", ({ device_id }) => {
-        document.getElementById("status").innerText =
-          "Hazır ✅ Device ID: " + device_id
-        socket.emit("host-ready", { device_id })
-      })
-
-      player.addListener("player_state_changed", (state) => {
-        if (!state) return
-        const paused = state.paused
-        const pos = state.position
-        const diff = Date.now() - lastActive
-
-        // Heartbeat: 10sn'den uzun süre sessiz kaldıysa reset
-        if (paused && diff > 10000) {
-          console.warn("⚠️ Sessizlik algılandı, yeniden başlatılıyor...")
-          socket.emit("restart-playback")
-          lastActive = Date.now()
+    async function loadDevices() {
+      try {
+        const r = await fetch("/devices"); const j = await r.json()
+        deviceSelect.innerHTML = ""
+        if (!j.devices?.length) { deviceSelect.innerHTML = `<option>Aktif cihaz yok — Spotify'ı açın</option>`; return }
+        for (const d of j.devices) {
+          const opt = document.createElement("option")
+          opt.value = d.id
+          opt.textContent = `${d.name} • ${d.type}${d.is_active ? " (active)" : ""}`
+          deviceSelect.appendChild(opt)
         }
-
-        // Normalde ilerliyorsa, lastActive'i güncelle
-        if (!paused && pos > 0) {
-          lastActive = Date.now()
-        }
-      })
-
-      player.connect()
+        log("Cihaz listesi güncellendi.")
+      } catch { log("Cihazlar alınamadı.") }
     }
 
-    const s = document.createElement("script")
-    s.src = "https://sdk.scdn.co/spotify-player.js"
-    document.head.appendChild(s);
+    async function connectSelectedDevice() {
+      const id = deviceSelect.value; if (!id) return log("Bir cihaz seçin.")
+      const r = await fetch("/transfer", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ device_id: id, play: true }) })
+      log(r.ok ? "Playback seçilen cihaza aktarıldı." : "Cihaza bağlanılamadı.")
+      await check()
+    }
+
+    async function check() {
+      const r = await fetch("/checkMixState"); const d = await r.json()
+      if (d.isPlaying) { stateText.textContent = "▶️ Çalıyor"; dot.classList.add("active") }
+      else { stateText.textContent = "⏸️ Çalmıyor"; dot.classList.remove("active") }
+      trackText.textContent = d.currentTrack ? `${d.currentTrack} — ${d.artist || ""}` : (d.reason || "Parça yok")
+      log("Durum güncellendi.")
+    }
+
+    async function seekForward() { await fetch("/playback/seekForward", { method: "POST" }); check() }
+    async function seekBackward() { await fetch("/playback/seekBackward", { method: "POST" }); check() }
+    async function pause() { await fetch("/playback/pause", { method: "POST" }); check() }
+    async function resume() { await fetch("/playback/resume", { method: "POST" }); check() }
+    async function next() { await fetch("/next", { method: "POST" }); check() }
+    async function previous() { await fetch("/previous", { method: "POST" }); check() }
+
+    window.addEventListener("load", async () => { await loadDevices(); await check(); setInterval(check, 5000) });
   </script>
 </body>
 

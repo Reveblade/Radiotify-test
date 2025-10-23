@@ -3,24 +3,136 @@
 
 <head>
   <meta charset="UTF-8" />
-  <title>Listener</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Radiotify — Listener</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI";
+      background: #0b0b0b;
+      color: #eee;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 16px;
+    }
+
+    h1 {
+      color: #1db954;
+    }
+
+    .panel {
+      background: #151515;
+      border: 1px solid #222;
+      border-radius: 12px;
+      padding: 20px;
+      width: 400px;
+    }
+
+    select,
+    button {
+      width: 100%;
+      border-radius: 8px;
+      padding: 10px;
+      margin-top: 8px;
+    }
+
+    select {
+      background: #202020;
+      border: 1px solid #333;
+      color: #ddd;
+    }
+
+    button {
+      background: #1db954;
+      color: #fff;
+      border: none;
+      cursor: pointer;
+    }
+
+    .log {
+      font-family: monospace;
+      background: #0f0f0f;
+      padding: 12px;
+      border-radius: 8px;
+      margin-top: 12px;
+      border: 1px solid #222;
+      height: 150px;
+      overflow: auto;
+      color: #bbb;
+      font-size: 13px;
+    }
+
+    .active {
+      color: #1db954;
+      font-weight: 600;
+    }
+  </style>
 </head>
 
 <body>
-  <h2>Listener</h2>
-  <pre id="log">Bağlanıyor...</pre>
+  <h1>🎧 Radiotify — Listener</h1>
+  <div class="panel">
+    <select id="deviceSelect">
+      <option>Yükleniyor...</option>
+    </select>
+    <button id="connectBtn">Cihaza Bağlan</button>
+    <div class="log" id="log"></div>
+  </div>
+
+  <!-- Socket.io tarayıcı istemcisi -->
   <script src="/socket.io/socket.io.js"></script>
-  <script>
-    const socket = io()
-    const log = document.getElementById("log")
-    socket.on("player-state", (st) => {
-      const tr = st.track_window?.current_track
-      if (!tr) return
-      log.textContent = `🎵 ${tr.name} — ${tr.artists
-        .map((a) => a.name)
-        .join(", ")}\n${Math.round(st.position / 1000)}s / ${Math.round(
-          st.duration / 1000
-        )}s`
+
+  <!-- Radiotify listener mantığı -->
+  <script type="module">
+    import {
+      ensureAuth,
+      connectSocket,
+      getDevices,
+      connectAndRefresh,
+      syncWithHost
+    } from "/client.js"
+
+    const logEl = document.getElementById("log")
+    const devSel = document.getElementById("deviceSelect")
+    const connectBtn = document.getElementById("connectBtn")
+
+    const log = (m) => {
+      const t = new Date().toLocaleTimeString()
+      logEl.innerHTML += `[${t}] ${m}<br>`
+      logEl.scrollTop = logEl.scrollHeight
+    }
+
+    const token = await ensureAuth()
+    log("✅ Spotify hesabı doğrulandı.")
+
+    async function refreshDevices() {
+      const d = await getDevices(token)
+      devSel.innerHTML = ""
+      if (!d.devices?.length) {
+        devSel.innerHTML = `<option>Spotify uygulaması açık değil.</option>`
+        return
+      }
+      d.devices.forEach((dev) => {
+        const opt = document.createElement("option")
+        opt.value = dev.id
+        opt.textContent = `${dev.name} • ${dev.type}${dev.is_active ? " (aktif)" : ""}`
+        if (dev.is_active) opt.classList.add("active")
+        devSel.appendChild(opt)
+      })
+    }
+
+    connectBtn.onclick = async () => {
+      const id = devSel.value
+      if (!id) return log("⚠️ Cihaz seçiniz.")
+      await connectAndRefresh(token, id, log, refreshDevices)
+    }
+
+    await refreshDevices()
+
+    connectSocket(async (payload) => {
+      await syncWithHost(payload, token)
+      if (payload?.item)
+        log(`🎵 ${payload.item.name} — ${payload.item.artists.join(", ")}`)
     });
   </script>
 </body>
