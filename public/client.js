@@ -89,35 +89,87 @@ export function connectSocket(onUpdate, onMix) {
 }
 
 // === Host'tan gelen playback senkronu ===
+let lastSyncedUri = null;
+let lastSyncedPos = 0;
+
 export async function syncWithHost(payload, token) {
   if (!payload?.item?.uri) return;
   const { item, progress_ms, server_sent_at } = payload;
   const drift = Date.now() - (server_sent_at || Date.now());
-  const pos = (progress_ms || 0) + drift;
+  const hostPos = (progress_ms || 0) + drift;
 
-  const devices = await getDevices(token);
-  const active = devices.devices?.find(d => d.is_active);
-  if (!active) {
-    console.warn("⚠️ Aktif cihaz yok, Spotify uygulaması açık mı?");
-    return;
-  }
+  try {
+    // listener'ın mevcut oynatıcısını sorgula
+    const res = await fetch("https://api.spotify.com/v1/me/player", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
 
-  const playRes = await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${active.id}`, {
-    method: "PUT",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({ uris: [item.uri], position_ms: Math.floor(pos) })
-  });
+    if (!res.ok) {
+      console.warn("⚠️ /me/player alınamadı:", await res.text());
+      return;
+    }
 
-  if (!playRes.ok) {
-    const txt = await playRes.text();
-    console.warn("Play hatası:", txt);
-  } else {
-    console.log(`▶️ ${item.name} — ${item.artists.join(", ")} (${Math.round(pos / 1000)}s)`);
+    const j = await res.json();
+    const currentUri = j?.item?.uri;
+    const currentPos = j?.progress_ms ?? 0;
+
+    const diff = Math.abs(currentPos - hostPos);
+    const threshold = 5000; // 5 saniye
+
+    // 🎯 Şarkı aynı ve fark 5 sn'den küçükse => SYNC YAPMA
+    if (currentUri === item.uri && diff < threshold) {
+      console.log(
+        `✅ Skip sync: ${item.name} (fark ${Math.round(diff / 1000)} sn)`
+      );
+      return;
+    }
+
+    // Şarkı değişti veya fark büyükse => SYNC ET
+    console.log(
+      `🔁 Sync: ${item.name} — fark ${Math.round(diff / 1000)} sn`
+    );
+
+    const devicesRes = await fetch(
+      "https://api.spotify.com/v1/me/player/devices",
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    const devices = await devicesRes.json();
+    const active = devices.devices?.find((d) => d.is_active);
+    if (!active) {
+      console.warn("⚠️ Aktif Spotify cihazı yok.");
+      return;
+    }
+
+    // PLAYBACK'i güncelle
+    const playRes = await fetch(
+      `https://api.spotify.com/v1/me/player/play?device_id=${active.id}`,
+      {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          uris: [item.uri],
+          position_ms: Math.floor(hostPos),
+        }),
+      }
+    );
+
+    if (!playRes.ok) {
+      console.warn("❌ Play hata:", await playRes.text());
+    } else {
+      console.log(
+        `▶️ Synced ${item.name} — ${Math.round(hostPos / 1000)} s`
+      );
+      lastSyncedUri = item.uri;
+      lastSyncedPos = hostPos;
+    }
+  } catch (err) {
+    console.error("syncWithHost hata:", err);
   }
 }
+
 
 // === Ek: Auto-refresh cihaz listesi ===
 export async function connectAndRefresh(token, deviceId, onLog, onRefresh) {
